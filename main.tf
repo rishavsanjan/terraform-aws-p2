@@ -1,41 +1,31 @@
-resource "aws_cloudwatch_dashboard" "main" {
-  dashboard_name = "terraform-dashboard-cd"
-
-  dashboard_body = jsonencode({
-    widgets = [
-      {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
-
-        properties = {
-          metrics = [
-            [
-              "AWS/EC2",
-              "CPUUtilization",
-              "InstanceId",
-              "i-014f69dc606c6941d"
-            ]
-          ]
-          period = 300
-          stat   = "Average"
-          region = "us-east-1"
-          title  = "EC2 Instance CPU"
-        }
-      },
-      {
-        type   = "text"
-        x      = 0
-        y      = 7
-        width  = 3
-        height = 3
-
-        properties = {
-          markdown = "Hello world"
-        }
-      }
-    ]
-  })
+resource "aws_sns_topic" "sns_topic" {
+  name = "terraform-aws-p2-sns"
 }
+
+resource "aws_sns_topic_subscription" "sns_sub" {
+  topic_arn = aws_sns_topic.sns_topic.arn
+  protocol  = "email"
+  endpoint  = "rishavsanjan4@gmail.com"
+}
+
+resource "aws_cloudwatch_metric_alarm" "name" {
+  alarm_name          = "terraform-aws-p2-cwma"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 10
+  statistic           = "Maximum"
+  threshold           = 20
+  alarm_description   = "This metric monitors ec2 cpu utilization"
+
+   dimensions = {
+    InstanceId = "i-014f69dc606c6941d"
+  }
+
+  alarm_actions = [
+    aws_sns_topic.sns_topic.arn
+  ]
+}
+
+
