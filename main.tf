@@ -1,13 +1,70 @@
-# This will detect whenever a EC2 instances is stopped, it will send alert
-
-resource "aws_sns_topic" "sns-topic" {
-  name = "ec2-state-change-topic"
+resource "aws_sns_topic" "sns_topic" {
+  name = "terraform-aws-p2-multi-instance-alarm"
 }
 
-resource "aws_sns_topic_subscription" "sns-topic-subscription" {
-  topic_arn = aws_sns_topic.sns-topic.arn
+resource "aws_sns_topic_subscription" "sns_topic_sub" {
+  topic_arn = aws_sns_topic.sns_topic.arn
   protocol  = "email"
-  endpoint  = "rishavsanjan0@gmail.com"
+  endpoint  = "rishavsanjan4@gmail.com"
+}
+
+
+resource "aws_iam_role" "lambda_role" {
+  name = "ec2-notification-lambda-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_policy" {
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+
+        Resource = aws_sns_topic.sns_topic.arn
+      }
+    ]
+
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "ec2_notification" {
+  filename         = "lambda.zip"
+  function_name    = "ec2-notification"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "ec2_notification.lambda_handler"
+  source_code_hash = filebase64sha256("lambda.zip")
+  runtime          = "python3.12"
+  environment {
+    variables = {
+      SNS_TOPIC_ARN = aws_sns_topic.sns_topic.arn
+    }
+  }
+
 }
 
 resource "aws_cloudwatch_event_rule" "cloud-watch-event-rule" {
@@ -25,28 +82,18 @@ resource "aws_cloudwatch_event_rule" "cloud-watch-event-rule" {
 
 resource "aws_cloudwatch_event_target" "event-target" {
   rule      = aws_cloudwatch_event_rule.cloud-watch-event-rule.name
-  target_id = "SendToSNS"
-  arn       = aws_sns_topic.sns-topic.arn
+  target_id = "SendToLambda"
+  arn       = aws_lambda_function.ec2_notification.arn
 }
 
-resource "aws_sns_topic_policy" "sns-topic-policy" {
-  arn = aws_sns_topic.sns-topic.arn
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-
-    Statement = [
-      {
-        Effect = "Allow"
-
-        Principal = {
-          Service = "events.amazonaws.com"
-        }
-
-        Action = "sns:Publish"
-
-        Resource = aws_sns_topic.sns-topic.arn
-      }
-    ]
-  })
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id = "AllowExecutionFromEventBridge"
+  action = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ec2_notification.function_name
+  principal = "events.amazonaws.com"
+  source_arn = aws_cloudwatch_event_rule.cloud-watch-event-rule.arn
 }
+
+
+
+
